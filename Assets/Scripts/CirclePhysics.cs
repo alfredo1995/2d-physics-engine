@@ -6,21 +6,28 @@ public class CirclePhysics : MonoBehaviour
     [Header("Propriedades físicas")]
     public float radius = 1f;
     public float mass = 1f;
-    public bool isKinematic = false; // se true, é controlado externamente (ex: segue o mouse)
+    public bool isKinematic = false;
     public Vector2 position;
     public Vector2 velocity;
     public Vector2 acceleration;
 
     [Header("Forças e física")]
-    public float gravityScale = 1f; // força gravitacional
-    public float linearDamping = 0.99f; // amortecimento (resistência do ar)
-    public float frictionCoefficient = 0.8f; // atrito ao colidir
+    public float gravityScale = 1f;
+    public float linearDamping = 0.99f;
+    public float frictionCoefficient = 0.8f;
 
     [Header("Visual")]
     public Color color = Color.gray;
 
     private LineRenderer lineRenderer;
     private const int segments = 64;
+
+    // Visualização de depuração
+    private Vector2 lastCollisionNormal;
+    private Vector2 lastCollisionTangent;
+    private Vector2 lastImpulseNormal;
+    private Vector2 lastImpulseFriction;
+    private bool showDebugVectors = false;
 
     void Awake()
     {
@@ -44,18 +51,16 @@ public class CirclePhysics : MonoBehaviour
         DrawCircle();
     }
 
-    // Aplicar forças externas (gravidade)
     private void ApplyForces()
     {
         Vector2 gravity = Physics2D.gravity * gravityScale;
         acceleration = gravity;
     }
 
-    //  Integrar movimento (Euler)
     private void Integrate()
     {
         velocity += acceleration * Time.deltaTime;
-        velocity *= linearDamping; // amortecimento
+        velocity *= linearDamping;
         position += velocity * Time.deltaTime;
     }
 
@@ -93,13 +98,13 @@ public class CirclePhysics : MonoBehaviour
         position -= normal * (penetration * (other.mass / totalMass));
         other.position += normal * (penetration * (mass / totalMass));
 
-        // Velocidades relativas
+        // Velocidade relativa
         Vector2 relativeVelocity = other.velocity - velocity;
         float velAlongNormal = Vector2.Dot(relativeVelocity, normal);
 
-        if (velAlongNormal > 0) return; // já se afastando
+        if (velAlongNormal > 0) return;
 
-        // Impulso normal (colisão elástica)
+        // Impulso normal
         float j = -(1 + restitution) * velAlongNormal;
         j /= (1 / mass) + (1 / other.mass);
         Vector2 impulse = j * normal;
@@ -107,28 +112,50 @@ public class CirclePhysics : MonoBehaviour
         velocity -= (1 / mass) * impulse;
         other.velocity += (1 / other.mass) * impulse;
 
-        // ATRITO — cálculo tangencial
+        // Vetor tangente (para atrito)
         relativeVelocity = other.velocity - velocity;
         Vector2 tangent = relativeVelocity - Vector2.Dot(relativeVelocity, normal) * normal;
-        tangent.Normalize();
+        if (tangent.sqrMagnitude > 0.0001f)
+            tangent.Normalize();
 
         float jt = -Vector2.Dot(relativeVelocity, tangent);
         jt /= (1 / mass) + (1 / other.mass);
 
-        float mu = Mathf.Sqrt(frictionCoefficient * other.frictionCoefficient); // coeficiente médio
+        float mu = Mathf.Sqrt(frictionCoefficient * other.frictionCoefficient);
         Vector2 frictionImpulse;
         if (Mathf.Abs(jt) < j * mu)
-            frictionImpulse = jt * tangent; // atrito estático
+            frictionImpulse = jt * tangent;
         else
-            frictionImpulse = -j * mu * tangent; // atrito dinâmico
+            frictionImpulse = -j * mu * tangent;
 
         velocity -= (1 / mass) * frictionImpulse;
         other.velocity += (1 / other.mass) * frictionImpulse;
+
+        // Guarda para visualização
+        lastCollisionNormal = normal;
+        lastCollisionTangent = tangent;
+        lastImpulseNormal = impulse;
+        lastImpulseFriction = frictionImpulse;
+        showDebugVectors = true;
     }
 
     private void OnDrawGizmos()
     {
         Gizmos.color = color;
         Gizmos.DrawWireSphere(position, radius);
+
+        // Desenhar vetores de colisão
+        if (showDebugVectors)
+        {
+            Vector3 origin = position;
+            Gizmos.color = Color.green;
+            Gizmos.DrawLine(origin, origin + (Vector3)lastCollisionNormal * 1.5f); // normal
+
+            Gizmos.color = Color.blue;
+            Gizmos.DrawLine(origin, origin + (Vector3)lastCollisionTangent * 1.5f); // tangente
+
+            Gizmos.color = Color.red;
+            Gizmos.DrawLine(origin, origin + (Vector3)(lastImpulseNormal + lastImpulseFriction) * 0.5f); // impulso total
+        }
     }
 }
