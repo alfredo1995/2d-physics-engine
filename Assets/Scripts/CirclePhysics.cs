@@ -3,12 +3,21 @@ using UnityEngine;
 [RequireComponent(typeof(LineRenderer))]
 public class CirclePhysics : MonoBehaviour
 {
+    [Header("Propriedades físicas")]
     public float radius = 1f;
     public float mass = 1f;
-    public Color color = Color.gray;
+    public bool isKinematic = false; // se true, é controlado externamente (ex: segue o mouse)
     public Vector2 position;
     public Vector2 velocity;
-    public bool isKinematic = false; // se for controlado externamente (como o do mouse)
+    public Vector2 acceleration;
+
+    [Header("Forças e física")]
+    public float gravityScale = 1f; // força gravitacional
+    public float linearDamping = 0.99f; // amortecimento (resistência do ar)
+    public float frictionCoefficient = 0.8f; // atrito ao colidir
+
+    [Header("Visual")]
+    public Color color = Color.gray;
 
     private LineRenderer lineRenderer;
     private const int segments = 64;
@@ -26,11 +35,28 @@ public class CirclePhysics : MonoBehaviour
 
     void Update()
     {
-        // Atualiza posição se não for controlado manualmente
         if (!isKinematic)
-            position += velocity * Time.deltaTime;
+        {
+            ApplyForces();
+            Integrate();
+        }
 
         DrawCircle();
+    }
+
+    // Aplicar forças externas (gravidade)
+    private void ApplyForces()
+    {
+        Vector2 gravity = Physics2D.gravity * gravityScale;
+        acceleration = gravity;
+    }
+
+    //  Integrar movimento (Euler)
+    private void Integrate()
+    {
+        velocity += acceleration * Time.deltaTime;
+        velocity *= linearDamping; // amortecimento
+        position += velocity * Time.deltaTime;
     }
 
     private void DrawCircle()
@@ -62,25 +88,42 @@ public class CirclePhysics : MonoBehaviour
         float penetration = (radius + other.radius) - dist;
         Vector2 normal = delta / dist;
 
-        // Corrige a sobreposição
+        // Corrige sobreposição
         float totalMass = mass + other.mass;
         position -= normal * (penetration * (other.mass / totalMass));
         other.position += normal * (penetration * (mass / totalMass));
 
-        // Calcula velocidades relativas
+        // Velocidades relativas
         Vector2 relativeVelocity = other.velocity - velocity;
         float velAlongNormal = Vector2.Dot(relativeVelocity, normal);
 
-        if (velAlongNormal > 0) return; // já estão se separando
+        if (velAlongNormal > 0) return; // já se afastando
 
-        // Impulso
+        // Impulso normal (colisão elástica)
         float j = -(1 + restitution) * velAlongNormal;
         j /= (1 / mass) + (1 / other.mass);
-
         Vector2 impulse = j * normal;
 
         velocity -= (1 / mass) * impulse;
         other.velocity += (1 / other.mass) * impulse;
+
+        // ATRITO — cálculo tangencial
+        relativeVelocity = other.velocity - velocity;
+        Vector2 tangent = relativeVelocity - Vector2.Dot(relativeVelocity, normal) * normal;
+        tangent.Normalize();
+
+        float jt = -Vector2.Dot(relativeVelocity, tangent);
+        jt /= (1 / mass) + (1 / other.mass);
+
+        float mu = Mathf.Sqrt(frictionCoefficient * other.frictionCoefficient); // coeficiente médio
+        Vector2 frictionImpulse;
+        if (Mathf.Abs(jt) < j * mu)
+            frictionImpulse = jt * tangent; // atrito estático
+        else
+            frictionImpulse = -j * mu * tangent; // atrito dinâmico
+
+        velocity -= (1 / mass) * frictionImpulse;
+        other.velocity += (1 / other.mass) * frictionImpulse;
     }
 
     private void OnDrawGizmos()
