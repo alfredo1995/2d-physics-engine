@@ -2,81 +2,80 @@ using UnityEngine;
 
 public class CircleManager : MonoBehaviour
 {
-    private CirclePhysics circleA;
-    private CirclePhysics circleB;
-    private LineRenderer linkLine;
+    public int circleCount = 10;
+    public float areaSize = 6f;
+    public float speed = 2f;
 
-    [Header("Configuração global")]
-    public float restitution = 0.8f;
-    public float groundY = -3f; // nível do "chão"
+    private CirclePhysics[] circles;
 
     void Start()
     {
-        Physics2D.gravity = new Vector2(0f, -9.81f); // ativa gravidade global
+        circles = new CirclePhysics[circleCount];
 
-        // cria dois círculos
-        circleA = new GameObject("CircleA").AddComponent<CirclePhysics>();
-        circleB = new GameObject("CircleB").AddComponent<CirclePhysics>();
+        for (int i = 0; i < circleCount; i++)
+        {
+            GameObject cObj = new GameObject("Circle_" + i);
+            CirclePhysics c = cObj.AddComponent<CirclePhysics>();
 
-        circleA.radius = 1f;
-        circleB.radius = 1f;
-        circleA.mass = 2f;
-        circleB.mass = 1f;
-        circleA.position = new Vector2(-2f, 2f);
-        circleB.position = new Vector2(2f, 4f);
-        circleA.velocity = new Vector2(2f, 0f);
-
-        circleB.isKinematic = true; // segue o mouse
-
-        // cria linha entre eles
-        GameObject lineObj = new GameObject("LinkLine");
-        linkLine = lineObj.AddComponent<LineRenderer>();
-        linkLine.material = new Material(Shader.Find("Sprites/Default"));
-        linkLine.widthMultiplier = 0.05f;
-        linkLine.positionCount = 2;
-        linkLine.startColor = linkLine.endColor = Color.blue;
+            c.radius = 0.4f;
+            c.position = new Vector2(
+                Random.Range(-areaSize * 0.8f, areaSize * 0.8f),
+                Random.Range(-areaSize * 0.8f, areaSize * 0.8f)
+            );
+            c.velocity = Random.insideUnitCircle * speed;
+            c.color = Random.ColorHSV(0f, 1f, 0.8f, 1f, 0.9f, 1f);
+            circles[i] = c;
+        }
     }
 
     void Update()
     {
-        // mover círculo B com o mouse
-        Vector3 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        mousePos.z = 0f;
-        circleB.position = mousePos;
-
-        // detectar e resolver colisão entre os dois
-        bool colliding = circleA.IsColliding(circleB);
-        if (colliding)
-            circleA.ResolveCollision(circleB, restitution);
-
-        // colisão com o chão
-        HandleGroundCollision(circleA);
-        HandleGroundCollision(circleB);
-
-        // atualizar cor e linha
-        circleA.color = colliding ? Color.red : Color.gray;
-        circleB.color = colliding ? Color.red : Color.gray;
-        linkLine.startColor = linkLine.endColor = colliding ? Color.red : Color.blue;
-
-        linkLine.SetPosition(0, circleA.position);
-        linkLine.SetPosition(1, circleB.position);
-    }
-
-    void HandleGroundCollision(CirclePhysics c)
-    {
-        if (c.isKinematic) return;
-
-        if (c.position.y - c.radius < groundY)
+        // movimentação e colisão com bordas
+        foreach (var c in circles)
         {
-            c.position.y = groundY + c.radius;
-            c.velocity.y *= -restitution;
-            c.velocity.x *= c.frictionCoefficient; // atrito com o chão
+            c.position += c.velocity * Time.deltaTime;
+
+            if (c.position.x + c.radius > areaSize)
+            {
+                c.position.x = areaSize - c.radius;
+                c.velocity.x *= -1;
+            }
+            else if (c.position.x - c.radius < -areaSize)
+            {
+                c.position.x = -areaSize + c.radius;
+                c.velocity.x *= -1;
+            }
+
+            if (c.position.y + c.radius > areaSize)
+            {
+                c.position.y = areaSize - c.radius;
+                c.velocity.y *= -1;
+            }
+            else if (c.position.y - c.radius < -areaSize)
+            {
+                c.position.y = -areaSize + c.radius;
+                c.velocity.y *= -1;
+            }
         }
+
+        // colisões n×n
+        for (int i = 0; i < circles.Length; i++)
+        {
+            for (int j = i + 1; j < circles.Length; j++)
+            {
+                if (circles[i].IsColliding(circles[j]))
+                    circles[i].ResolveCollision(circles[j]);
+            }
+        }
+
+        // atualizar visuais
+        foreach (var c in circles)
+            c.UpdateVisual();
     }
 
     private void OnDrawGizmos()
     {
-        Gizmos.color = Color.green;
-        Gizmos.DrawLine(new Vector3(-10, groundY, 0), new Vector3(10, groundY, 0));
+        Gizmos.color = Color.gray;
+        Gizmos.DrawWireCube(Vector3.zero, Vector3.one * areaSize * 2f);
     }
 }
